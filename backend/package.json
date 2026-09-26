@@ -6,6 +6,8 @@
     "start": "node server.js",
     "dev": "node server.js",
     "seed": "node src/scripts/seedDatabase.js",
+    "export-db": "node src/scripts/exportDatabase.js",
+    "import-db": "node src/scripts/importDatabase.js",
     "test": "node tests/api.test.js"
   },
   "keywords": [],

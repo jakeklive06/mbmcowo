@@ -6,6 +6,8 @@
     "backend": "npm --prefix backend start",
     "backend:dev": "npm --prefix backend run dev",
     "backend:seed": "npm --prefix backend run seed",
+    "backend:export": "npm --prefix backend run export-db",
+    "backend:import": "npm --prefix backend run import-db",
     "backend:test": "npm --prefix backend test",
     "frontend": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
