@@ -50,7 +50,7 @@ export default function StatsDashboard() {
             {overview?.totalAssetRecords || 0}
           </div>
           <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-            Surveyed survey document entries
+            Unique physical QR asset units
           </div>
         </div>
 

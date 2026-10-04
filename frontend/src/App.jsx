@@ -6,6 +6,7 @@ import StatsDashboard from './components/StatsDashboard';
 import QrScannerModal from './components/QrScannerModal';
 import QrGeneratorModal from './components/QrGeneratorModal';
 import ConditionReportModal from './components/ConditionReportModal';
+import PrintStudio from './components/PrintStudio';
 import { lookupItem, fetchItemByCode, fetchItemByModel } from './services/api';
 import { QrCode, Search, Camera, Database, BarChart3, Printer, Sparkles, CheckCircle2, AlertCircle } from 'lucide-react';
 import './styles/index.css';
@@ -26,7 +27,7 @@ export default function App() {
 
   // Load initial sample asset on first mount
   useEffect(() => {
-    handleLookup('MBMC-MOD-0001');
+    handleLookup('MBMC-AST-0001-01');
   }, []);
 
   const handleLookup = async (queryTerm) => {
@@ -42,7 +43,7 @@ export default function App() {
         setLookupError(`No item found matching "${queryTerm}"`);
       }
     } catch (err) {
-      setLookupError(`No asset or model found matching "${queryTerm}"`);
+      setLookupError(`No asset, unit, or model found matching "${queryTerm}"`);
     } finally {
       setLoading(false);
     }
@@ -85,7 +86,7 @@ export default function App() {
           className={`tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
           onClick={() => setActiveTab('directory')}
         >
-          <Database size={16} /> Asset Directory (520 Items)
+          <Database size={16} /> Asset Directory (3,443 Items)
         </button>
         <button
           className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`}
@@ -108,13 +109,13 @@ export default function App() {
             {/* Hero search bar for typing Model Number or Asset Code */}
             <div className="hero-lookup">
               <div className="hero-badge">
-                <Sparkles size={14} /> MBMC Asset Verification Engine
+                <Sparkles size={14} /> MBMC Individual Unit Asset Engine
               </div>
               <h1 className="hero-title">
-                Scan QR or Type Model Number
+                Scan QR or Type Asset Tag / Model
               </h1>
               <p className="hero-desc">
-                Instant lookup for municipal furniture, seating, cupboards, and tables across Mira Bhayandar Municipal Corporation offices.
+                Every single chair, table, and cupboard has its own unique QR code tag, condition status, and exact room location.
               </p>
 
               <form
@@ -127,7 +128,7 @@ export default function App() {
                 <input
                   type="text"
                   className="lookup-input"
-                  placeholder="Type Model Number (e.g. MBMC-MOD-0001) or Asset Tag..."
+                  placeholder="Type Unit Tag (e.g. MBMC-AST-0001-05) or Office Lot (MBMC-AST-0001)..."
                   value={lookupQuery}
                   onChange={(e) => setLookupQuery(e.target.value)}
                 />
@@ -162,21 +163,21 @@ export default function App() {
 
               {/* Quick sample clicks */}
               <div className="quick-samples">
-                <span>Quick Models:</span>
-                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-MOD-0001')}>
-                  MBMC-MOD-0001 (Chairs)
+                <span>Quick Samples:</span>
+                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-AST-0001-01')}>
+                  Chair #1 (Fine)
                 </button>
-                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-MOD-0002')}>
-                  MBMC-MOD-0002 (Table)
+                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-AST-0001-05')}>
+                  Chair #5 (Broken)
                 </button>
-                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-MOD-0003')}>
-                  MBMC-MOD-0003 (Cupboard)
+                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-AST-0001')}>
+                  Office Lot (6 Chairs)
                 </button>
-                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-AST-0050')}>
-                  MBMC-AST-0050 (QR Tag)
+                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-AST-0002-01')}>
+                  Table #1
                 </button>
-                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-MOD-0250')}>
-                  MBMC-MOD-0250 (Officer Chair)
+                <button type="button" className="sample-tag" onClick={() => handleLookup('MBMC-AST-0003-01')}>
+                  Cupboard #1
                 </button>
               </div>
             </div>
@@ -190,6 +191,7 @@ export default function App() {
               <AssetCard
                 asset={currentAsset}
                 onOpenConditionReport={() => setIsConditionModalOpen(true)}
+                onSelectSibling={(sibling) => handleLookup(sibling.assetCode)}
               />
             ) : null}
           </div>
@@ -207,45 +209,10 @@ export default function App() {
         {activeTab === 'analytics' && <StatsDashboard />}
 
         {activeTab === 'print' && (
-          <div className="glass-card" style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center', padding: '40px' }}>
-            <Printer size={48} color="#38bdf8" style={{ margin: '0 auto 16px auto' }} />
-            <h2 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '8px' }}>
-              MBMC Physical Tag Print Studio
-            </h2>
-            <p style={{ color: '#94a3b8', fontSize: '14px', maxWidth: '500px', margin: '0 auto 24px auto' }}>
-              Print official weather-resistant asset tags with municipal headers, asset codes, model numbers, and scannable QR codes.
-            </p>
-
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <a
-                href="/api/qr/batch-labels?limit=40"
-                target="_blank"
-                rel="noreferrer"
-                className="btn btn-primary"
-                style={{ padding: '12px 24px', fontSize: '15px' }}
-              >
-                Open Multi-Label Sticker Sheet (40 Tags)
-              </a>
-              {currentAsset && (
-                <a
-                  href={`/api/qr/${currentAsset.assetCode}/label`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn btn-secondary"
-                  style={{ padding: '12px 24px', fontSize: '15px' }}
-                >
-                  Print Current Tag ({currentAsset.assetCode})
-                </a>
-              )}
-              <button
-                className="btn btn-secondary"
-                onClick={() => setIsGeneratorOpen(true)}
-                style={{ padding: '12px 24px', fontSize: '15px' }}
-              >
-                Custom QR Generator
-              </button>
-            </div>
-          </div>
+          <PrintStudio
+            currentAsset={currentAsset}
+            onOpenGenerator={() => setIsGeneratorOpen(true)}
+          />
         )}
       </main>
 

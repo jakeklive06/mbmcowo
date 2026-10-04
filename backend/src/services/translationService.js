@@ -362,7 +362,11 @@ function extractFloor(marathiLocation, defaultFloor = 'Ground Floor') {
       return { floorEnglish: f.english, floorMarathi: f.marathi };
     }
   }
-  return { floorEnglish: defaultFloor, floorMarathi: '' };
+  const defaultEntry = FLOOR_MAP.find((f) => f.english === defaultFloor);
+  return {
+    floorEnglish: defaultFloor,
+    floorMarathi: defaultEntry ? defaultEntry.marathi : 'तळ मजला',
+  };
 }
 
 /**

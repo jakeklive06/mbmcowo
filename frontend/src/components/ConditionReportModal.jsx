@@ -49,47 +49,35 @@ export default function ConditionReportModal({ isOpen, asset, onClose, onUpdated
         </div>
 
         <div style={{ marginBottom: '14px', fontSize: '13px', color: '#94a3b8' }}>
-          Asset: <strong style={{ color: '#38bdf8' }}>{asset.assetCode}</strong> &bull; Model: <strong style={{ color: '#facc15' }}>{asset.modelNumber || '-'}</strong>
+          Asset Tag: <strong style={{ color: '#38bdf8' }}>{asset.assetCode}</strong> &bull; Unit: <strong style={{ color: '#facc15' }}>{asset.unitLabel || 'Unit ' + (asset.unitNumber || 1)}</strong>
           <div style={{ color: '#fff', fontWeight: 600, marginTop: '2px' }}>{asset.nameEnglish} ({asset.nameMarathi})</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>{asset.fullLocationEnglish}</div>
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <div>
-            <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Condition Status</label>
+            <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Condition Status for this Unit</label>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) => {
+                const newStatus = e.target.value;
+                setStatus(newStatus);
+                if (newStatus === 'Operational') {
+                  setUsableQty(1);
+                  setDamagedQty(0);
+                } else if (newStatus === 'Damaged' || newStatus === 'Partially Damaged') {
+                  setUsableQty(0);
+                  setDamagedQty(1);
+                }
+              }}
               style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', padding: '8px 10px', borderRadius: '6px', fontSize: '13px' }}
             >
-              <option value="Operational">Operational (Good condition)</option>
-              <option value="Partially Damaged">Partially Damaged (Needs repair)</option>
-              <option value="Damaged">Damaged (Unusable)</option>
+              <option value="Operational">Operational (Fine / Good condition)</option>
+              <option value="Damaged">Damaged (Broken / Needs repair)</option>
+              <option value="Partially Damaged">Partially Damaged</option>
               <option value="Under Repair">Under Repair</option>
               <option value="Decommissioned">Decommissioned</option>
             </select>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Usable Count</label>
-              <input
-                type="number"
-                min="0"
-                value={usableQty}
-                onChange={(e) => setUsableQty(e.target.value)}
-                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', padding: '8px 10px', borderRadius: '6px', fontSize: '13px' }}
-              />
-            </div>
-            <div>
-              <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Damaged Count</label>
-              <input
-                type="number"
-                min="0"
-                value={damagedQty}
-                onChange={(e) => setDamagedQty(e.target.value)}
-                style={{ width: '100%', background: '#0f172a', border: '1px solid #334155', color: '#fff', padding: '8px 10px', borderRadius: '6px', fontSize: '13px' }}
-              />
-            </div>
           </div>
 
           <div>

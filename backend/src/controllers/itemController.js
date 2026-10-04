@@ -2,6 +2,35 @@ const Item = require('../models/Item');
 const { generateQrDataUrl } = require('../services/qrService');
 
 /**
+ * Helper to attach all sibling units in the same office/lot to an item response
+ */
+async function attachSiblingUnits(itemDoc) {
+  if (!itemDoc) return null;
+  const item = itemDoc.toObject ? itemDoc.toObject() : { ...itemDoc };
+  if (item.lotCode) {
+    const siblings = await Item.find({ lotCode: item.lotCode })
+      .select('assetCode modelNumber unitNumber totalUnitsInLot unitLabel status conditionSummary qrCode.dataUrl usableQty damagedQty')
+      .sort({ unitNumber: 1 })
+      .lean();
+    item.siblingUnits = siblings;
+  } else {
+    item.siblingUnits = [
+      {
+        assetCode: item.assetCode,
+        modelNumber: item.modelNumber,
+        unitNumber: item.unitNumber || 1,
+        totalUnitsInLot: item.totalUnitsInLot || 1,
+        unitLabel: item.unitLabel || 'Unit 1 of 1',
+        status: item.status,
+        conditionSummary: item.conditionSummary,
+        qrCode: item.qrCode,
+      },
+    ];
+  }
+  return item;
+}
+
+/**
  * Get paginated list of items with rich filters and full-text search
  */
 exports.getItems = async (req, res, next) => {
@@ -15,6 +44,7 @@ exports.getItems = async (req, res, next) => {
       department,
       category,
       status,
+      lotCode,
       hasDamaged,
       sortBy = 'assetCode',
       sortOrder = 'asc',
@@ -28,6 +58,8 @@ exports.getItems = async (req, res, next) => {
       query.$or = [
         { assetCode: { $regex: searchTerm, $options: 'i' } },
         { modelNumber: { $regex: searchTerm, $options: 'i' } },
+        { lotCode: { $regex: searchTerm, $options: 'i' } },
+        { unitLabel: { $regex: searchTerm, $options: 'i' } },
         { nameEnglish: { $regex: searchTerm, $options: 'i' } },
         { nameMarathi: { $regex: searchTerm, $options: 'i' } },
         { departmentEnglish: { $regex: searchTerm, $options: 'i' } },
@@ -40,12 +72,15 @@ exports.getItems = async (req, res, next) => {
     if (req.query.modelNumber) {
       query.modelNumber = { $regex: req.query.modelNumber.trim(), $options: 'i' };
     }
+    if (lotCode) query.lotCode = lotCode.trim();
     if (building) query.buildingEnglish = building;
     if (ward) query.ward = ward;
     if (department) query.departmentEnglish = department;
     if (category) query.category = category;
     if (status) query.status = status;
-    if (hasDamaged === 'true') query.damagedQty = { $gt: 0 };
+    if (hasDamaged === 'true') {
+      query.$or = [{ status: 'Damaged' }, { damagedQty: { $gt: 0 } }];
+    }
 
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 20;
@@ -82,30 +117,44 @@ exports.getItemById = async (req, res, next) => {
     if (!item) {
       return res.status(404).json({ success: false, message: 'Item not found' });
     }
-    res.json({ success: true, data: item });
+    const itemWithSiblings = await attachSiblingUnits(item);
+    res.json({ success: true, data: itemWithSiblings });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Get item by Asset Code (e.g. MBMC-AST-0001)
+ * Get item by Asset Code (e.g. MBMC-AST-0001-01 or MBMC-AST-0001)
  */
 exports.getItemByCode = async (req, res, next) => {
   try {
     const code = req.params.code.toUpperCase().trim();
-    const item = await Item.findOne({ assetCode: code });
+    let item = await Item.findOne({ assetCode: code });
+
+    // If not found as exact unit code, check if it's a lot/group prefix
+    if (!item) {
+      item = await Item.findOne({
+        $or: [
+          { lotCode: code },
+          { assetCode: { $regex: `^${code}-`, $options: 'i' } },
+        ],
+      }).sort({ unitNumber: 1 });
+    }
+
     if (!item) {
       return res.status(404).json({ success: false, message: `Item with code ${code} not found` });
     }
-    res.json({ success: true, data: item });
+
+    const itemWithSiblings = await attachSiblingUnits(item);
+    res.json({ success: true, data: itemWithSiblings });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Get item by Model Number (e.g. MBMC-MOD-0001 or typed model number)
+ * Get item by Model Number (e.g. MBMC-MOD-0001-01 or MBMC-MOD-0001)
  */
 exports.getItemByModel = async (req, res, next) => {
   try {
@@ -114,42 +163,64 @@ exports.getItemByModel = async (req, res, next) => {
       $or: [
         { modelNumber: model.toUpperCase() },
         { modelNumber: { $regex: `^${model}$`, $options: 'i' } },
+        { modelNumber: { $regex: `^${model}-`, $options: 'i' } },
         { modelNumber: { $regex: model, $options: 'i' } },
       ],
-    });
+    }).sort({ unitNumber: 1 });
+
     if (!item) {
       return res.status(404).json({
         success: false,
         message: `Item with model number "${model}" not found`,
       });
     }
-    res.json({ success: true, data: item });
+
+    const itemWithSiblings = await attachSiblingUnits(item);
+    res.json({ success: true, data: itemWithSiblings });
   } catch (error) {
     next(error);
   }
 };
 
 /**
- * Universal lookup by either Model Number OR Asset Code
+ * Universal lookup by either Model Number OR Asset Code OR Lot Code
  */
 exports.lookupItem = async (req, res, next) => {
   try {
     const queryTerm = req.params.query.trim();
-    const item = await Item.findOne({
+    const upperQuery = queryTerm.toUpperCase();
+
+    // 1. Try exact match on assetCode, modelNumber, lotCode
+    let item = await Item.findOne({
       $or: [
-        { assetCode: queryTerm.toUpperCase() },
-        { modelNumber: queryTerm.toUpperCase() },
-        { assetCode: { $regex: queryTerm, $options: 'i' } },
-        { modelNumber: { $regex: queryTerm, $options: 'i' } },
+        { assetCode: upperQuery },
+        { modelNumber: upperQuery },
+        { lotCode: upperQuery },
       ],
     });
+
+    // 2. Try prefix/regex match (e.g. searching MBMC-AST-0001 matches MBMC-AST-0001-01)
+    if (!item) {
+      item = await Item.findOne({
+        $or: [
+          { assetCode: { $regex: `^${queryTerm}-`, $options: 'i' } },
+          { modelNumber: { $regex: `^${queryTerm}-`, $options: 'i' } },
+          { assetCode: { $regex: queryTerm, $options: 'i' } },
+          { modelNumber: { $regex: queryTerm, $options: 'i' } },
+          { lotCode: { $regex: queryTerm, $options: 'i' } },
+        ],
+      }).sort({ unitNumber: 1 });
+    }
+
     if (!item) {
       return res.status(404).json({
         success: false,
-        message: `No item found matching "${queryTerm}" (searched asset codes and model numbers)`,
+        message: `No item found matching "${queryTerm}" (searched asset codes, lot codes, and model numbers)`,
       });
     }
-    res.json({ success: true, data: item });
+
+    const itemWithSiblings = await attachSiblingUnits(item);
+    res.json({ success: true, data: itemWithSiblings });
   } catch (error) {
     next(error);
   }
@@ -236,19 +307,27 @@ exports.updateItem = async (req, res, next) => {
 
     const { usableQty, damagedQty, status, notes, updatedBy } = req.body;
 
-    if (usableQty !== undefined) item.usableQty = parseInt(usableQty, 10) || 0;
-    if (damagedQty !== undefined) item.damagedQty = parseInt(damagedQty, 10) || 0;
-    item.totalQty = item.usableQty + item.damagedQty;
-
     if (status) {
       item.status = status;
-    } else {
-      if (item.damagedQty > 0 && item.usableQty > 0) item.status = 'Partially Damaged';
-      else if (item.damagedQty > 0 && item.usableQty === 0) item.status = 'Damaged';
-      else item.status = 'Operational';
+      if (status === 'Operational') {
+        item.usableQty = 1;
+        item.damagedQty = 0;
+        item.conditionSummary = 'Operational / Fine (Good condition)';
+      } else if (status === 'Damaged') {
+        item.usableQty = 0;
+        item.damagedQty = 1;
+        item.conditionSummary = 'Damaged / Broken (Requires maintenance/repair)';
+      } else {
+        item.conditionSummary = status;
+      }
+    } else if (usableQty !== undefined || damagedQty !== undefined) {
+      const u = parseInt(usableQty, 10) || 0;
+      const d = parseInt(damagedQty, 10) || 0;
+      item.usableQty = u;
+      item.damagedQty = d;
+      item.status = d > 0 ? 'Damaged' : 'Operational';
+      item.conditionSummary = item.status === 'Operational' ? 'Operational / Fine (Good condition)' : 'Damaged / Broken';
     }
-
-    item.conditionSummary = `${item.usableQty} Usable, ${item.damagedQty} Damaged (Total: ${item.totalQty})`;
 
     // Allow updating metadata fields
     if (req.body.nameEnglish) item.nameEnglish = req.body.nameEnglish;
@@ -262,7 +341,7 @@ exports.updateItem = async (req, res, next) => {
       status: item.status,
       usableQty: item.usableQty,
       damagedQty: item.damagedQty,
-      notes: notes || 'Item details updated',
+      notes: notes || `Item status updated to ${item.status}`,
       reportedBy: updatedBy || 'Officer / System',
       timestamp: new Date(),
     });
@@ -270,7 +349,17 @@ exports.updateItem = async (req, res, next) => {
     item.lastAuditedAt = new Date();
     await item.save();
 
-    res.json({ success: true, data: item });
+    // Sync lot counts across siblings if in a lot
+    if (item.lotCode) {
+      const lotUsable = await Item.countDocuments({ lotCode: item.lotCode, status: 'Operational' });
+      const lotDamaged = await Item.countDocuments({ lotCode: item.lotCode, status: { $ne: 'Operational' } });
+      await Item.updateMany({ lotCode: item.lotCode }, { lotUsableQty: lotUsable, lotDamagedQty: lotDamaged });
+      item.lotUsableQty = lotUsable;
+      item.lotDamagedQty = lotDamaged;
+    }
+
+    const itemWithSiblings = await attachSiblingUnits(item);
+    res.json({ success: true, data: itemWithSiblings });
   } catch (error) {
     next(error);
   }
@@ -292,9 +381,21 @@ exports.patchStatus = async (req, res, next) => {
     }
 
     item.status = status;
+    if (status === 'Operational') {
+      item.usableQty = 1;
+      item.damagedQty = 0;
+      item.conditionSummary = 'Operational / Fine (Good condition)';
+    } else if (status === 'Damaged') {
+      item.usableQty = 0;
+      item.damagedQty = 1;
+      item.conditionSummary = 'Damaged / Broken (Requires maintenance/repair)';
+    }
+
     item.auditHistory.push({
       action: 'Status Update',
       status,
+      usableQty: item.usableQty,
+      damagedQty: item.damagedQty,
       notes: notes || `Status changed to ${status}`,
       reportedBy: reportedBy || 'System Auditor',
       timestamp: new Date(),
@@ -303,7 +404,17 @@ exports.patchStatus = async (req, res, next) => {
     item.lastAuditedAt = new Date();
     await item.save();
 
-    res.json({ success: true, data: item });
+    // Sync lot counts across siblings if in a lot
+    if (item.lotCode) {
+      const lotUsable = await Item.countDocuments({ lotCode: item.lotCode, status: 'Operational' });
+      const lotDamaged = await Item.countDocuments({ lotCode: item.lotCode, status: { $ne: 'Operational' } });
+      await Item.updateMany({ lotCode: item.lotCode }, { lotUsableQty: lotUsable, lotDamagedQty: lotDamaged });
+      item.lotUsableQty = lotUsable;
+      item.lotDamagedQty = lotDamaged;
+    }
+
+    const itemWithSiblings = await attachSiblingUnits(item);
+    res.json({ success: true, data: itemWithSiblings });
   } catch (error) {
     next(error);
   }
@@ -335,8 +446,9 @@ exports.getDepartments = async (req, res, next) => {
           _id: '$departmentEnglish',
           marathi: { $first: '$departmentMarathi' },
           count: { $sum: 1 },
-          totalPhysicalQty: { $sum: '$totalQty' },
+          totalPhysicalQty: { $sum: 1 },
           damagedCount: { $sum: '$damagedQty' },
+          usableCount: { $sum: '$usableQty' },
         },
       },
       { $sort: { count: -1 } },
@@ -358,8 +470,9 @@ exports.getBuildings = async (req, res, next) => {
           _id: '$buildingEnglish',
           ward: { $first: '$ward' },
           count: { $sum: 1 },
-          totalPhysicalQty: { $sum: '$totalQty' },
+          totalPhysicalQty: { $sum: 1 },
           damagedCount: { $sum: '$damagedQty' },
+          usableCount: { $sum: '$usableQty' },
         },
       },
       { $sort: { count: -1 } },

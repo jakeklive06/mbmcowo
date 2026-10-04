@@ -162,13 +162,19 @@ function generatePrintableLabelHtml(item) {
   <div class="label-card">
     <div class="corp-title">Mira Bhayandar Municipal Corp</div>
     <div class="badge-code">${item.assetCode}</div>
-    <div style="font-family: monospace; font-size: 12px; font-weight: 700; color: #475569; margin-bottom: 8px;">Model: ${item.modelNumber || 'N/A'}</div>
+    <div style="font-family: monospace; font-size: 13px; font-weight: 800; color: #1e3a8a; margin-bottom: 4px;">
+      ${item.unitLabel || 'Unit ' + item.unitNumber} &bull; <span style="color: ${item.status === 'Operational' ? '#059669' : '#dc2626'}">${item.status}</span>
+    </div>
     <div class="qr-container">
       <img src="${item.qrCode.dataUrl}" alt="QR Code for ${item.assetCode}">
     </div>
     <div class="item-name-en">${item.nameEnglish}</div>
     <div class="item-name-mr">${item.nameMarathi}</div>
     <div class="meta-box">
+      <div class="meta-row">
+        <span class="meta-label">Unit Number:</span>
+        <span class="meta-val" style="font-family: monospace;">${item.unitLabel || 'Unit ' + item.unitNumber}</span>
+      </div>
       <div class="meta-row">
         <span class="meta-label">Model No:</span>
         <span class="meta-val" style="font-family: monospace;">${item.modelNumber || '-'}</span>
@@ -182,8 +188,12 @@ function generatePrintableLabelHtml(item) {
         <span class="meta-val">${item.floorEnglish} &bull; ${item.ward}</span>
       </div>
       <div class="meta-row">
-        <span class="meta-label">Count / Status:</span>
-        <span class="meta-val">${item.usableQty} Usable (${item.status})</span>
+        <span class="meta-label">Condition:</span>
+        <span class="meta-val" style="color: ${item.status === 'Operational' ? '#059669' : '#dc2626'}">${item.conditionSummary || item.status}</span>
+      </div>
+      <div class="meta-row">
+        <span class="meta-label">Office Lot:</span>
+        <span class="meta-val" style="font-family: monospace;">${item.lotCode || 'N/A'}</span>
       </div>
     </div>
   </div>

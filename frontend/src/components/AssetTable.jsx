@@ -71,16 +71,16 @@ export default function AssetTable({ onSelectAsset }) {
         <div>
           <h2 style={{ fontSize: '20px', fontWeight: 800 }}>Municipal Asset Directory</h2>
           <div style={{ fontSize: '13px', color: '#94a3b8' }}>
-            Browse and filter all {total} surveyed assets across MBMC departments
+            Browse and filter all {total} individual physical units across MBMC offices
           </div>
         </div>
 
         <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '8px' }}>
-          <div className="search-input-wrapper" style={{ width: '260px' }}>
+          <div className="search-input-wrapper" style={{ width: '280px' }}>
             <Search size={14} className="search-icon-left" />
             <input
               type="text"
-              placeholder="Search table..."
+              placeholder="Search tag, model, office, lot..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -117,9 +117,9 @@ export default function AssetTable({ onSelectAsset }) {
           }}
         >
           <option value="">All Categories</option>
-          <option value="Seating">Seating</option>
+          <option value="Seating">Seating (Chairs)</option>
           <option value="Desks & Tables">Desks & Tables</option>
-          <option value="Storage">Storage</option>
+          <option value="Storage">Storage (Cupboards/Racks)</option>
           <option value="Fixtures & Stands">Fixtures & Stands</option>
         </select>
 
@@ -132,9 +132,8 @@ export default function AssetTable({ onSelectAsset }) {
           }}
         >
           <option value="">All Condition Statuses</option>
-          <option value="Operational">Operational</option>
-          <option value="Partially Damaged">Partially Damaged</option>
-          <option value="Damaged">Damaged</option>
+          <option value="Operational">Operational (Fine)</option>
+          <option value="Damaged">Damaged (Broken)</option>
           <option value="Under Repair">Under Repair</option>
         </select>
 
@@ -158,11 +157,11 @@ export default function AssetTable({ onSelectAsset }) {
           <thead>
             <tr>
               <th>Asset Tag</th>
-              <th>Model Number</th>
+              <th>Unit</th>
               <th>Item Name</th>
               <th>Department / Floor</th>
-              <th>Counts</th>
               <th>Condition</th>
+              <th>Office Lot</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -181,9 +180,8 @@ export default function AssetTable({ onSelectAsset }) {
               </tr>
             ) : (
               items.map((item) => {
-                let statusColor = '#34d399';
-                if (item.status === 'Partially Damaged') statusColor = '#f59e0b';
-                else if (item.status === 'Damaged') statusColor = '#f43f5e';
+                const isDamaged = item.status === 'Damaged' || item.status === 'Partially Damaged';
+                const statusColor = isDamaged ? '#f43f5e' : '#34d399';
 
                 return (
                   <tr key={item._id}>
@@ -191,7 +189,20 @@ export default function AssetTable({ onSelectAsset }) {
                       <span className="table-code">{item.assetCode}</span>
                     </td>
                     <td>
-                      <span className="table-model">{item.modelNumber || '-'}</span>
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          fontSize: '11px',
+                          color: '#facc15',
+                          background: '#0f172a',
+                          padding: '3px 8px',
+                          borderRadius: '4px',
+                          border: '1px solid #334155',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {item.unitLabel || 'Unit ' + (item.unitNumber || 1)}
+                      </span>
                     </td>
                     <td>
                       <div style={{ fontWeight: 700, color: '#fff' }}>{item.nameEnglish}</div>
@@ -202,11 +213,6 @@ export default function AssetTable({ onSelectAsset }) {
                       <div style={{ fontSize: '11px', color: '#64748b' }}>
                         {item.floorEnglish} &bull; {item.buildingEnglish}
                       </div>
-                    </td>
-                    <td>
-                      <span style={{ color: '#34d399', fontWeight: 700 }}>{item.usableQty}</span> /{' '}
-                      <span style={{ color: '#f87171', fontWeight: 700 }}>{item.damagedQty}</span>{' '}
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>({item.totalQty})</span>
                     </td>
                     <td>
                       <span
@@ -220,7 +226,12 @@ export default function AssetTable({ onSelectAsset }) {
                           border: `1px solid ${statusColor}44`,
                         }}
                       >
-                        {item.status}
+                        {isDamaged ? 'Broken (Damaged)' : 'Fine (Operational)'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#94a3b8' }}>
+                        {item.lotCode || '-'}
                       </span>
                     </td>
                     <td>
@@ -229,7 +240,7 @@ export default function AssetTable({ onSelectAsset }) {
                           className="btn btn-secondary"
                           style={{ padding: '4px 8px', fontSize: '11px' }}
                           onClick={() => onSelectAsset(item)}
-                          title="Inspect Asset"
+                          title="Inspect Unit and Office Inventory"
                         >
                           <ExternalLink size={12} /> Inspect
                         </button>

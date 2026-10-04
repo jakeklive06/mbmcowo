@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const connectDB = require('../config/db');
@@ -28,62 +29,124 @@ async function seedDatabase() {
   await Item.deleteMany({});
   console.log(`[Seed] Collection cleared.`);
 
-  console.log(`[Seed] Generating unique Asset Codes and QR Codes for ${allItems.length} records...`);
+  console.log(`[Seed] Expanding ${allItems.length} survey rows into individual physical unit assets...`);
 
   const documentsToInsert = [];
   let totalUsable = 0;
   let totalDamaged = 0;
   let totalCount = 0;
+  let lotCounter = 0;
 
-  for (let i = 0; i < allItems.length; i++) {
-    const raw = allItems[i];
-    const seq = (i + 1).toString().padStart(4, '0');
-    const assetCode = `MBMC-AST-${seq}`;
-    const modelNumber = `MBMC-MOD-${seq}`;
-    const scanUrl = `${baseUrl}/scan/${assetCode}`;
+  // Process rows and build individual unit items
+  const unitsToGenerate = [];
 
-    const qrDataUrl = await generateQrDataUrl(scanUrl);
+  for (let rIdx = 0; rIdx < allItems.length; rIdx++) {
+    const raw = allItems[rIdx];
+    const usableCount = parseInt(raw.usableQty, 10) || 0;
+    const damagedCount = parseInt(raw.damagedQty, 10) || 0;
+    const rowTotal = parseInt(raw.totalQty, 10) || 0;
+    const totalCountInRow = Math.max(rowTotal, usableCount + damagedCount);
 
-    totalUsable += raw.usableQty;
-    totalDamaged += raw.damagedQty;
-    totalCount += raw.totalQty;
+    // If no physical units exist in this row, skip
+    if (totalCountInRow <= 0) {
+      continue;
+    }
 
-    documentsToInsert.push({
-      ...raw,
-      assetCode,
-      modelNumber,
-      qrCode: {
-        dataUrl: qrDataUrl,
-        scanUrl,
-      },
-      auditHistory: [
-        {
-          action: 'Initial Import',
-          status: raw.status,
-          usableQty: raw.usableQty,
-          damagedQty: raw.damagedQty,
-          notes: `Ingested from official MBMC survey file: ${raw.sourceFile}`,
-          reportedBy: 'System Ingestion Script',
-        },
-      ],
-    });
+    lotCounter++;
+    const lotSeq = lotCounter.toString().padStart(4, '0');
+    const lotCode = `MBMC-LOT-${lotSeq}`;
+    const modelBase = `MBMC-MOD-${lotSeq}`;
 
-    if ((i + 1) % 100 === 0 || i + 1 === allItems.length) {
-      console.log(` - Processed ${i + 1} / ${allItems.length} items with QR codes`);
+    totalUsable += usableCount;
+    totalDamaged += (totalCountInRow - usableCount);
+    totalCount += totalCountInRow;
+
+    for (let u = 1; u <= totalCountInRow; u++) {
+      const unitPad = u.toString().padStart(2, '0');
+      const assetCode = `MBMC-AST-${lotSeq}-${unitPad}`;
+      const modelNumber = `${modelBase}-${unitPad}`;
+      const unitLabel = `Unit ${u} of ${totalCountInRow}`;
+
+      // First usableCount units are Operational, remainder are Damaged
+      const isUsable = u <= usableCount;
+      const status = isUsable ? 'Operational' : 'Damaged';
+      const conditionSummary = isUsable
+        ? 'Operational / Fine (Good condition)'
+        : 'Damaged / Broken (Requires maintenance/repair)';
+
+      unitsToGenerate.push({
+        ...raw,
+        assetCode,
+        modelNumber,
+        lotCode,
+        unitNumber: u,
+        totalUnitsInLot: totalCountInRow,
+        unitLabel,
+        usableQty: isUsable ? 1 : 0,
+        damagedQty: isUsable ? 0 : 1,
+        totalQty: 1,
+        lotUsableQty: usableCount,
+        lotDamagedQty: damagedCount,
+        lotTotalQty: totalCountInRow,
+        status,
+        conditionSummary,
+        scanUrl: `${baseUrl}/scan/${assetCode}`,
+      });
     }
   }
 
-  console.log(`[Seed] Inserting documents into MongoDB...`);
+  console.log(`[Seed] Generating unique QR Codes for ${unitsToGenerate.length} individual items...`);
+
+  // Generate QR codes in batches of 100 for high performance
+  const BATCH_SIZE = 100;
+  for (let b = 0; b < unitsToGenerate.length; b += BATCH_SIZE) {
+    const chunk = unitsToGenerate.slice(b, b + BATCH_SIZE);
+    await Promise.all(
+      chunk.map(async (item) => {
+        const qrDataUrl = await generateQrDataUrl(item.scanUrl);
+        documentsToInsert.push({
+          ...item,
+          qrCode: {
+            dataUrl: qrDataUrl,
+            scanUrl: item.scanUrl,
+          },
+          auditHistory: [
+            {
+              action: 'Initial Import',
+              status: item.status,
+              usableQty: item.usableQty,
+              damagedQty: item.damagedQty,
+              notes: `Individual asset tagged from survey lot ${item.lotCode} (${item.unitLabel}) in file: ${item.sourceFile}`,
+              reportedBy: 'System Ingestion Script',
+              timestamp: new Date(),
+            },
+          ],
+        });
+      })
+    );
+
+    const processed = Math.min(b + BATCH_SIZE, unitsToGenerate.length);
+    if (processed % 500 === 0 || processed === unitsToGenerate.length) {
+      console.log(` - Generated QR codes for ${processed} / ${unitsToGenerate.length} items`);
+    }
+  }
+
+  console.log(`[Seed] Inserting ${documentsToInsert.length} documents into MongoDB...`);
   await Item.insertMany(documentsToInsert);
+
+  // Also write backup file so importDatabase can restore immediately
+  const backupPath = path.join(__dirname, '../../data/mbmc_assets_backup.json');
+  console.log(`[Seed] Saving updated backup file to: ${backupPath}`);
+  fs.writeFileSync(backupPath, JSON.stringify(documentsToInsert, null, 2), 'utf-8');
 
   console.log('\n====================================================');
   console.log('           SEEDING COMPLETED SUCCESSFULLY           ');
   console.log('====================================================');
-  console.log(` - Total Asset Records Ingested : ${documentsToInsert.length}`);
-  console.log(` - Total Usable Physical Items  : ${totalUsable}`);
-  console.log(` - Total Damaged Physical Items : ${totalDamaged}`);
-  console.log(` - Overall Physical Item Count  : ${totalCount}`);
-  console.log(` - Base Scan URL Pattern        : ${baseUrl}/scan/MBMC-AST-XXXX`);
+  console.log(` - Total Survey Lots / Offices  : ${lotCounter}`);
+  console.log(` - Total Individual Items / QRs : ${documentsToInsert.length}`);
+  console.log(` - Total Usable Items (Fine)    : ${totalUsable}`);
+  console.log(` - Total Damaged Items (Broken) : ${totalDamaged}`);
+  console.log(` - Base Scan URL Pattern        : ${baseUrl}/scan/MBMC-AST-XXXX-XX`);
   console.log('====================================================\n');
 
   await mongoose.connection.close();

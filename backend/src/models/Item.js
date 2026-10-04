@@ -46,6 +46,26 @@ const itemSchema = new mongoose.Schema(
       index: true,
       sparse: true,
     },
+    lotCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      index: true,
+    },
+    unitNumber: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    totalUnitsInLot: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
+    unitLabel: {
+      type: String,
+      default: 'Unit 1 of 1',
+    },
     nameEnglish: {
       type: String,
       required: true,
@@ -112,7 +132,7 @@ const itemSchema = new mongoose.Schema(
     },
     usableQty: {
       type: Number,
-      default: 0,
+      default: 1,
       min: 0,
     },
     damagedQty: {
@@ -121,6 +141,21 @@ const itemSchema = new mongoose.Schema(
       min: 0,
     },
     totalQty: {
+      type: Number,
+      default: 1,
+      min: 0,
+    },
+    lotUsableQty: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lotDamagedQty: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lotTotalQty: {
       type: Number,
       default: 0,
       min: 0,
@@ -133,7 +168,7 @@ const itemSchema = new mongoose.Schema(
     },
     conditionSummary: {
       type: String,
-      default: '',
+      default: 'Operational (Fine)',
     },
     qrCode: {
       dataUrl: {
@@ -164,6 +199,7 @@ const itemSchema = new mongoose.Schema(
 itemSchema.index({
   assetCode: 'text',
   modelNumber: 'text',
+  lotCode: 'text',
   nameEnglish: 'text',
   nameMarathi: 'text',
   departmentEnglish: 'text',

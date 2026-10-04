@@ -84,24 +84,24 @@ async function runTests() {
 
   // Test 2: Ingested items count
   let sampleItem = null;
-  await assert('Database should contain 520 seeded asset records', async () => {
+  await assert('Database should contain 3,443 seeded individual unit records', async () => {
     const count = await Item.countDocuments();
-    if (count !== 520) {
-      throw new Error(`Expected 520 items, found ${count}`);
+    if (count !== 3443) {
+      throw new Error(`Expected 3443 items, found ${count}`);
     }
-    sampleItem = await Item.findOne({ assetCode: 'MBMC-AST-0001' });
-    if (!sampleItem) throw new Error('MBMC-AST-0001 not found');
+    sampleItem = await Item.findOne({ assetCode: 'MBMC-AST-0001-01' });
+    if (!sampleItem) throw new Error('MBMC-AST-0001-01 not found');
   });
 
   // Test 3: Query Items list
-  await assert('GET /api/items returns paginated items with valid translations', async () => {
+  await assert('GET /api/items returns paginated items with valid translations and unit info', async () => {
     const res = await request({ path: '/api/items?limit=10', method: 'GET' });
     if (res.statusCode !== 200 || !res.json || !res.json.data || res.json.data.length !== 10) {
       throw new Error(`Failed to fetch items list: ${res.statusCode}`);
     }
     const first = res.json.data[0];
-    if (!first.nameEnglish || !first.nameMarathi || !first.qrCode) {
-      throw new Error('Item missing bilingual names or QR code');
+    if (!first.nameEnglish || !first.nameMarathi || !first.qrCode || !first.unitLabel) {
+      throw new Error('Item missing bilingual names, QR code, or unitLabel');
     }
   });
 
@@ -113,44 +113,47 @@ async function runTests() {
     }
   });
 
-  // Test 5: Fetch by Asset Code
-  await assert('GET /api/items/code/MBMC-AST-0001 returns correct item', async () => {
-    const res = await request({ path: '/api/items/code/MBMC-AST-0001', method: 'GET' });
-    if (res.statusCode !== 200 || !res.json || res.json.data.assetCode !== 'MBMC-AST-0001') {
+  // Test 5: Fetch by Individual Unit Asset Code
+  await assert('GET /api/items/code/MBMC-AST-0001-01 returns item with sibling units attached', async () => {
+    const res = await request({ path: '/api/items/code/MBMC-AST-0001-01', method: 'GET' });
+    if (res.statusCode !== 200 || !res.json || res.json.data.assetCode !== 'MBMC-AST-0001-01') {
       throw new Error(`Failed to retrieve by code: ${res.body}`);
     }
-  });
-
-  // Test 5B: Fetch by Model Number
-  await assert('GET /api/items/model/MBMC-MOD-0001 returns item by model number', async () => {
-    const res = await request({ path: '/api/items/model/MBMC-MOD-0001', method: 'GET' });
-    if (res.statusCode !== 200 || !res.json || res.json.data.modelNumber !== 'MBMC-MOD-0001') {
-      throw new Error(`Failed to retrieve by model number: ${res.body}`);
-    }
-    if (res.json.data.assetCode !== 'MBMC-AST-0001') {
-      throw new Error(`Model number did not map to correct asset code: ${res.json.data.assetCode}`);
+    if (!res.json.data.siblingUnits || res.json.data.siblingUnits.length === 0) {
+      throw new Error('Response missing siblingUnits array');
     }
   });
 
-  // Test 5C: Universal Lookup (Model or Asset Code)
-  await assert('GET /api/items/lookup/MBMC-MOD-0001 resolves via universal lookup', async () => {
-    const res = await request({ path: '/api/items/lookup/MBMC-MOD-0001', method: 'GET' });
+  // Test 5B: Fetch by Office Lot Prefix (e.g. MBMC-AST-0001)
+  await assert('GET /api/items/code/MBMC-AST-0001 resolves lot prefix with all office sibling units', async () => {
+    const res = await request({ path: '/api/items/code/MBMC-AST-0001', method: 'GET' });
     if (res.statusCode !== 200 || !res.json || !res.json.data) {
+      throw new Error(`Failed to retrieve by lot prefix: ${res.body}`);
+    }
+    if (res.json.data.siblingUnits.length !== 6) {
+      throw new Error(`Expected 6 sibling units in Lot 1, got ${res.json.data.siblingUnits.length}`);
+    }
+  });
+
+  // Test 5C: Universal Lookup (Unit Code or Model)
+  await assert('GET /api/items/lookup/MBMC-AST-0001-05 resolves unit via universal lookup', async () => {
+    const res = await request({ path: '/api/items/lookup/MBMC-AST-0001-05', method: 'GET' });
+    if (res.statusCode !== 200 || !res.json || !res.json.data || res.json.data.assetCode !== 'MBMC-AST-0001-05') {
       throw new Error(`Lookup failed: ${res.body}`);
     }
   });
 
-  // Test 6: Mobile QR scan & Model Number landing page
-  await assert('GET /scan/MBMC-AST-0001 renders mobile verification HTML page', async () => {
-    const res = await request({ path: '/scan/MBMC-AST-0001', method: 'GET' });
+  // Test 6: Mobile QR scan view for individual chair unit
+  await assert('GET /scan/MBMC-AST-0001-05 renders mobile verification with sibling chairs inventory', async () => {
+    const res = await request({ path: '/scan/MBMC-AST-0001-05', method: 'GET' });
     if (res.statusCode !== 200) throw new Error(`Status ${res.statusCode}`);
-    if (!res.body.includes('MBMC-AST-0001') || !res.body.includes('Mira Bhayandar Municipal Corporation')) {
-      throw new Error('Scan page missing municipal header or asset code');
+    if (!res.body.includes('MBMC-AST-0001-05') || !res.body.includes('Office Inventory')) {
+      throw new Error('Scan page missing unit code or Office Inventory section');
     }
   });
 
   // Test 6B: Web page lookup by Model Number
-  await assert('GET /scan/MBMC-MOD-0001 renders item verification page via typed model number', async () => {
+  await assert('GET /scan/MBMC-MOD-0001 renders item verification page via model', async () => {
     const res = await request({ path: '/scan/MBMC-MOD-0001', method: 'GET' });
     if (res.statusCode !== 200) throw new Error(`Status ${res.statusCode}`);
     if (!res.body.includes('MBMC-MOD-0001') || !res.body.includes('Water Supply Department')) {
@@ -166,9 +169,9 @@ async function runTests() {
     }
   });
 
-  // Test 7: Streaming PNG QR image
-  await assert('GET /api/qr/MBMC-AST-0001/image streams valid PNG image', async () => {
-    const res = await request({ path: '/api/qr/MBMC-AST-0001/image', method: 'GET' });
+  // Test 7: Streaming PNG QR image for individual unit
+  await assert('GET /api/qr/MBMC-AST-0001-01/image streams valid PNG image', async () => {
+    const res = await request({ path: '/api/qr/MBMC-AST-0001-01/image', method: 'GET' });
     if (res.statusCode !== 200) throw new Error(`Status ${res.statusCode}`);
     if (res.headers['content-type'] !== 'image/png') {
       throw new Error(`Expected image/png, got ${res.headers['content-type']}`);
@@ -179,32 +182,32 @@ async function runTests() {
     }
   });
 
-  // Test 8: Printable Asset Tag Label
-  await assert('GET /api/qr/MBMC-AST-0001/label renders printable HTML label', async () => {
-    const res = await request({ path: '/api/qr/MBMC-AST-0001/label', method: 'GET' });
-    if (res.statusCode !== 200 || !res.body.includes('Asset Tag - MBMC-AST-0001')) {
+  // Test 8: Printable Asset Tag Label for individual unit
+  await assert('GET /api/qr/MBMC-AST-0001-01/label renders printable HTML label with unit number', async () => {
+    const res = await request({ path: '/api/qr/MBMC-AST-0001-01/label', method: 'GET' });
+    if (res.statusCode !== 200 || !res.body.includes('MBMC-AST-0001-01')) {
       throw new Error('Failed to generate printable label');
     }
   });
 
   // Test 9: Stats overview
-  await assert('GET /api/stats/overview returns complete analytics', async () => {
+  await assert('GET /api/stats/overview returns complete analytics for all 3,443 physical items', async () => {
     const res = await request({ path: '/api/stats/overview', method: 'GET' });
     if (res.statusCode !== 200 || !res.json || !res.json.data) {
       throw new Error('Stats overview failed');
     }
     const data = res.json.data;
-    if (data.totalAssetRecords !== 520 || data.physicalItems.total < 3000) {
+    if (data.totalAssetRecords !== 3443 || data.physicalItems.total !== 3443) {
       throw new Error(`Unexpected stats counts: ${JSON.stringify(data)}`);
     }
   });
 
   // Test 10: Update item
-  await assert('PUT /api/items/:id updates condition and logs audit history', async () => {
-    const item = await Item.findOne({ assetCode: 'MBMC-AST-0002' });
+  await assert('PUT /api/items/:id updates unit condition and logs audit history', async () => {
+    const item = await Item.findOne({ assetCode: 'MBMC-AST-0001-02' });
     const payload = JSON.stringify({
-      status: 'Under Repair',
-      notes: 'Sent for leg welding',
+      status: 'Damaged',
+      notes: 'Broken backrest reported by officer',
       updatedBy: 'Test Inspector',
     });
 
@@ -220,13 +223,13 @@ async function runTests() {
       payload
     );
 
-    if (res.statusCode !== 200 || !res.json || res.json.data.status !== 'Under Repair') {
-      throw new Error(`Update failed: ${res.body}`);
+    if (res.statusCode !== 200 || !res.json || res.json.data.status !== 'Damaged') {
+      throw new Error(`Failed to update item: ${res.body}`);
     }
 
     const updated = await Item.findById(item._id);
     const lastAudit = updated.auditHistory[updated.auditHistory.length - 1];
-    if (lastAudit.status !== 'Under Repair') {
+    if (lastAudit.status !== 'Damaged') {
       throw new Error('Audit history not recorded');
     }
   });
